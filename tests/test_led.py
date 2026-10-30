@@ -3,7 +3,19 @@ import tempfile
 import time
 import unittest
 
-from fluxio_sim.led import BLUE, CHANNELS, CYAN, GREEN, OFF, RED, StatusLed
+from fluxio_sim.led import (
+    BLUE,
+    CHANNELS,
+    CYAN,
+    GREEN,
+    MAGENTA,
+    OFF,
+    RED,
+    WHITE,
+    YELLOW,
+    StatusLed,
+    outputs_color,
+)
 
 
 class FakeClock:
@@ -24,10 +36,12 @@ class PatternTest(unittest.TestCase):
         self.assertEqual(self.led.color_at(0.3), OFF)
         self.assertEqual(self.led.color_at(0.6), BLUE)
 
-    def test_online_is_solid_green(self):
+    def test_online_idle_is_a_short_green_tick(self):
         self.led.set_state("online")
-        for t in (0.0, 0.3, 0.77, 12.5):
-            self.assertEqual(self.led.color_at(t), GREEN)
+        self.assertEqual(self.led.color_at(0.05), GREEN)
+        self.assertEqual(self.led.color_at(0.5), OFF)
+        self.assertEqual(self.led.color_at(1.9), OFF)
+        self.assertEqual(self.led.color_at(2.05), GREEN)
 
     def test_error_blinks_red(self):
         self.led.set_state("error")
@@ -36,10 +50,35 @@ class PatternTest(unittest.TestCase):
 
     def test_flash_overrides_then_expires(self):
         self.led.set_state("online")
-        self.clock.t = 10.0
+        self.clock.t = 10.5
         self.led.flash(CYAN, 0.08)
-        self.assertEqual(self.led.color_at(10.05), CYAN)
-        self.assertEqual(self.led.color_at(10.09), GREEN)
+        self.assertEqual(self.led.color_at(10.55), CYAN)
+        self.assertEqual(self.led.color_at(10.6), OFF)
+
+    def test_outputs_take_over_while_online(self):
+        self.led.set_state("online")
+        self.led.set_outputs((1, 0, 0, 0))
+        for t in (0.05, 0.5, 1.9):
+            self.assertEqual(self.led.color_at(t), RED)
+
+    def test_flash_winks_off_over_outputs(self):
+        self.led.set_state("online")
+        self.led.set_outputs((0, 0, 1, 0))
+        self.clock.t = 3.0
+        self.led.flash(CYAN, 0.08)
+        self.assertEqual(self.led.color_at(3.05), OFF)
+        self.assertEqual(self.led.color_at(3.1), BLUE)
+
+    def test_outputs_ignored_when_not_online(self):
+        self.led.set_outputs((1, 0, 0, 0))
+        self.assertEqual(self.led.color_at(0.1), BLUE)
+        self.assertEqual(self.led.color_at(0.3), OFF)
+
+    def test_all_outputs_off_returns_to_idle_pattern(self):
+        self.led.set_state("online")
+        self.led.set_outputs((0, 1, 0, 0))
+        self.led.set_outputs((0, 0, 0, 0))
+        self.assertEqual(self.led.color_at(0.5), OFF)
 
     def test_unknown_state(self):
         with self.assertRaises(ValueError):
@@ -48,6 +87,23 @@ class PatternTest(unittest.TestCase):
     def test_disabled_led_start_stop_is_noop(self):
         self.led.start()
         self.led.stop()
+
+
+class OutputsColorTest(unittest.TestCase):
+    def test_mapping(self):
+        cases = {
+            (0, 0, 0, 0): OFF,
+            (1, 0, 0, 0): RED,
+            (0, 1, 0, 0): GREEN,
+            (0, 0, 1, 0): BLUE,
+            (1, 1, 0, 0): YELLOW,
+            (1, 0, 1, 0): MAGENTA,
+            (0, 0, 0, 1): WHITE,
+            (1, 0, 0, 1): WHITE,
+        }
+        for do, color in cases.items():
+            with self.subTest(do=do):
+                self.assertEqual(outputs_color(do), color)
 
 
 class SysfsTest(unittest.TestCase):
@@ -75,10 +131,11 @@ class SysfsTest(unittest.TestCase):
     def test_drives_brightness_and_restores_triggers(self):
         led = StatusLed(self.dir)
         led.set_state("online")
+        led.set_outputs((1, 0, 1, 0))
         led.start()
         self.assertEqual([self._get(ch, "trigger") for ch in CHANNELS], ["none"] * 3)
 
-        expected = ["0", "1", "0"]
+        expected = ["1", "0", "1"]
         deadline = time.monotonic() + 2.0
         while time.monotonic() < deadline and [self._get(ch, "brightness") for ch in CHANNELS] != expected:
             time.sleep(0.01)

@@ -26,7 +26,8 @@ implementation and flips `FLUXIO_IO_SOURCE`.
   `{"telemetry": true}` (it stops on its own after 10 s without one):
   `{"ms":...,"seq":...,"ai":[4],"ao":[4],"di":[4],"do":[4]}`.
 - AI values random-walk inside each channel's `mapMin`..`mapMax`; DI toggle
-  about once a minute; `do`/`ao` commands are echoed back in telemetry.
+  about once a minute; `do`/`ao` commands are echoed back in telemetry, and
+  the DO states are mirrored on the RGB LED (see below).
 - `manual` and `get_channels` are handled. `logic`, `logic_get`,
   `logic_sync` and `ota` are logged and ignored.
 - On a clean stop it publishes `{"online":false}` itself, since the broker only
@@ -39,9 +40,23 @@ implementation and flips `FLUXIO_IO_SOURCE`.
 | Blue blinking fast | Connecting to the broker |
 | Yellow blinking | Device ID not registered in Fluxio yet |
 | Red blinking | Backend or broker error, retrying |
-| Solid green | Online |
+| Short green blink every 2 s | Online, all digital outputs off |
 | Cyan flash | Telemetry message sent |
-| Magenta flash | Command received |
+| Magenta flash | Command received (other than a DO command) |
+
+While online, the digital outputs take over the LED so dashboard commands are
+visible on the board:
+
+| Output on | LED |
+|---|---|
+| DO0 | Red |
+| DO1 | Green |
+| DO2 | Blue |
+| DO3 | White (all three) |
+
+The colors mix, so DO0 + DO1 is yellow and DO1 + DO2 is cyan. While any
+output is on, the cyan and magenta flashes become a short blink-off instead,
+so the output color stays readable.
 
 When the simulator stops, the LED goes back to the board's default
 (blue heartbeat).

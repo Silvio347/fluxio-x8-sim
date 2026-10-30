@@ -150,6 +150,7 @@ class SimulatedDevice:
                 self._load_channels()
 
             self._io.step()
+            self._led.set_outputs(self._io.read().do)
 
             if self._client.is_connected():
                 with self._state_lock:
@@ -198,10 +199,13 @@ class SimulatedDevice:
             log.warning("Invalid JSON on %s: %s", message.topic, exc)
             return
 
-        if not msg.is_telemetry_keepalive():
+        # A DO command already shows up as an LED color change.
+        if msg.do is None and not msg.is_telemetry_keepalive():
             self._led.flash(MAGENTA, 0.4)
         with self._state_lock:
             effects = self._state.apply(msg, self._io, self._clock())
+        if msg.do is not None:
+            self._led.set_outputs(self._io.read().do)
         # The firmware also avoids HTTP inside the MQTT callback, so the
         # client keeps servicing the connection while the request runs.
         if REFRESH_CHANNELS in effects:

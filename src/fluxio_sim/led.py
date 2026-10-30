@@ -6,7 +6,7 @@ import logging
 import os
 import threading
 import time
-from typing import Callable
+from typing import Callable, Sequence
 
 log = logging.getLogger(__name__)
 
@@ -19,22 +19,34 @@ BLUE: Color = (0, 0, 1)
 YELLOW: Color = (1, 1, 0)
 CYAN: Color = (0, 1, 1)
 MAGENTA: Color = (1, 0, 1)
+WHITE: Color = (1, 1, 1)
 
 CHANNELS = ("ledR", "ledG", "ledB")
 
 # state -> (color, seconds on, seconds off); 0 seconds off means solid.
+# "online" is only a short tick so it can't be mistaken for DO1 (green).
 PATTERNS: dict[str, tuple[Color, float, float]] = {
     "connecting": (BLUE, 0.25, 0.25),
     "not_registered": (YELLOW, 0.5, 0.5),
     "error": (RED, 0.5, 0.5),
-    "online": (GREEN, 1.0, 0.0),
+    "online": (GREEN, 0.1, 1.9),
 }
 
 _REFRESH_S = 0.02
 
 
+def outputs_color(do: Sequence[int]) -> Color:
+    """DO0, DO1 and DO2 drive red, green and blue; DO3 turns all three on."""
+    white = len(do) > 3 and bool(do[3])
+    return (int(white or bool(do[0])), int(white or bool(do[1])), int(white or bool(do[2])))
+
+
 class StatusLed:
     """A base pattern per device state, with short flashes on top for events.
+
+    While online, any digital output that is on takes over the LED and its
+    color mixes the outputs; events then show as a short blink-off so that
+    color stays readable.
 
     Any sysfs error disables the LED instead of crashing the device: the LED
     is a nice-to-have and must never take the simulator down.
@@ -47,6 +59,7 @@ class StatusLed:
         self._state = "connecting"
         self._flash_color: Color | None = None
         self._flash_until = 0.0
+        self._outputs: Color = OFF
         self._shown: Color | None = None
         self._saved: dict[str, tuple[str, str]] = {}
         self._stop = threading.Event()
@@ -102,11 +115,23 @@ class StatusLed:
             self._flash_color = color
             self._flash_until = self._clock() + seconds
 
+    def set_outputs(self, do: Sequence[int]) -> None:
+        color = outputs_color(do)
+        with self._lock:
+            self._outputs = color
+
     def color_at(self, now: float) -> Color:
         with self._lock:
-            if self._flash_color is not None and now < self._flash_until:
-                return self._flash_color
-            color, on_s, off_s = PATTERNS[self._state]
+            state = self._state
+            outputs = self._outputs
+            flash = self._flash_color if now < self._flash_until else None
+
+        if state == "online" and outputs != OFF:
+            return OFF if flash is not None else outputs
+        if flash is not None:
+            return flash
+
+        color, on_s, off_s = PATTERNS[state]
         if off_s <= 0:
             return color
         return color if now % (on_s + off_s) < on_s else OFF
