@@ -1,0 +1,15 @@
+services:
+  fluxio-x8-sim:
+    build: .
+    image: fluxio-x8-sim:latest
+    container_name: fluxio-x8-sim
+    # Host networking so the status payload reports the board's real Wi-Fi IP.
+    network_mode: host
+    env_file: config.env
+    environment:
+      FLUXIO_LED_DIR: /leds
+    volumes:
+      # The real directory, not /sys/class/leds: those entries are relative
+      # symlinks that would resolve inside the container's read-only /sys.
+      - /sys/devices/platform/leds/leds:/leds
+    restart: "no"
