@@ -20,7 +20,7 @@ src/fluxio_sim/
   protocol.py   — topics, payload builders, command/response parsing (no I/O)
   state.py      — telemetry keepalive and command rules (no MQTT)
   io_source.py  — IoSource interface + RandomIo (phase 0)
-  led.py        — status LED through sysfs
+  led.py        — status LED through sysfs; mirrors DO0-DO3 as red/green/blue/white
   backend.py    — HTTP calls to the Fluxio backend (requests)
   device.py     — MQTT wiring and the main loop (paho-mqtt)
   config.py     — environment variables
@@ -32,6 +32,9 @@ tests/          — unittest, standard library only
 - Everything in English: code, identifiers, comments, docs, commit messages.
 - Comments are for humans: explain why or a non-obvious constraint. No
   narration of what the code does and no commented-out code.
+- Commit messages follow Conventional Commits (`feat:`, `fix:`, `docs:`,
+  `test:`, `refactor:`, `chore:`, with an optional scope such as
+  `feat(led):`).
 - No AI attribution in commits or PRs (no Co-Authored-By trailers, no
   generated-by footers).
 - Never commit `config.env` or any credential. The backend token and MQTT
@@ -39,6 +42,8 @@ tests/          — unittest, standard library only
 - Keep `protocol.py`, `state.py`, `io_source.py`, `led.py` and `config.py`
   free of third-party imports so the tests run with plain Python.
 - The LED must never crash the simulator: sysfs errors disable it.
+- The "online" LED pattern must not be a solid single color, or it would be
+  confused with a digital output being on.
 
 ## Test
 
