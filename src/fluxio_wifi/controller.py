@@ -1,4 +1,4 @@
-"""Decides when the board falls back to its own access point and when it goes back."""
+"""Decides when the board falls back to its own access point and when the setup page is up."""
 
 from __future__ import annotations
 
@@ -13,6 +13,10 @@ from .nm import Network
 
 log = logging.getLogger(__name__)
 
+# How often the network list is refreshed while the page is open on the
+# regular network. A scan takes a few seconds, so it never runs per request.
+SCAN_EVERY_S = 60.0
+
 
 @dataclass(frozen=True)
 class Timing:
@@ -25,6 +29,9 @@ class Timing:
     # retries its saved networks.
     ap_window_s: float = 120.0
     client_retry_s: float = 30.0
+    # Same as the firmware's web server: reachable on the regular network for
+    # 10 minutes after start. 0 = only on the access point, inf = always.
+    lan_portal_s: float = 600.0
 
 
 @dataclass(frozen=True)
@@ -67,8 +74,11 @@ class Controller:
         self._ap_password = ap_password
         self._timing = timing
         self._clock = clock
-        self._last_ok = clock()
+        start = clock()
+        self._last_ok = start
+        self._lan_until = start + timing.lan_portal_s
         self._ap_since = 0.0
+        self._last_scan = float("-inf")
         self._portal: Portal | None = None
         # Filled by the portal's HTTP threads, consumed by tick().
         self._pending: queue.Queue[Credentials] = queue.Queue(maxsize=1)
@@ -85,34 +95,18 @@ class Controller:
 
     def tick(self) -> None:
         now = self._clock()
-        if self.mode == "monitor":
-            if self._nm.client_connected():
-                self._last_ok = now
-            elif now - self._last_ok >= self._timing.grace_s:
-                log.warning(
-                    "No Wi-Fi for %.0fs; starting access point %s",
-                    now - self._last_ok, self._ap_ssid,
-                )
-                self._start_ap(now)
-            return
-
         try:
             creds = self._pending.get_nowait()
         except queue.Empty:
             creds = None
+
         if creds is not None:
             self._try_credentials(creds)
-            return
-
-        if now - self._ap_since >= self._timing.ap_window_s:
-            if self._nm.stations() > 0:
-                return  # someone is on the portal; don't pull the AP from under them
-            log.info(
-                "Access point window over; retrying saved networks for %.0fs",
-                self._timing.client_retry_s,
-            )
-            self._stop_ap()
-            self._retry_ap_later(now)
+        elif self.mode == "monitor":
+            self._monitor(now)
+        else:
+            self._access_point(now)
+        self._sync_portal(self._clock())
 
     def run(self, stop: threading.Event) -> None:
         try:
@@ -123,9 +117,35 @@ class Controller:
             self.shutdown()
 
     def shutdown(self) -> None:
+        self._close_portal()
         if self.mode == "ap":
-            self._stop_ap()
+            self._nm.stop_hotspot()
             self.mode = "monitor"
+
+    def _monitor(self, now: float) -> None:
+        if self._nm.client_connected():
+            self._last_ok = now
+            if now < self._lan_until and now - self._last_scan >= SCAN_EVERY_S:
+                self._scan(now)
+        elif now - self._last_ok >= self._timing.grace_s:
+            log.warning("No Wi-Fi for %.0fs; starting access point %s", now - self._last_ok, self._ap_ssid)
+            self._start_ap(now)
+
+    def _access_point(self, now: float) -> None:
+        if now - self._ap_since < self._timing.ap_window_s:
+            return
+        if self._nm.stations() > 0:
+            return  # someone is on the access point; don't pull it from under them
+        log.info("Access point window over; retrying saved networks for %.0fs", self._timing.client_retry_s)
+        self._nm.stop_hotspot()
+        self._retry_ap_later(now)
+
+    def _scan(self, now: float) -> None:
+        self._last_scan = now
+        networks = self._nm.scan()
+        # A failed scan comes back empty; keep offering the last good list.
+        if networks:
+            self.networks = networks
 
     def _retry_ap_later(self, now: float) -> None:
         self.mode = "monitor"
@@ -133,40 +153,56 @@ class Controller:
         self._last_ok = now - self._timing.grace_s + self._timing.client_retry_s
 
     def _start_ap(self, now: float) -> None:
-        # The radio can't scan while it is the access point, so the portal
+        # The radio can't scan while it is the access point, so the page
         # offers the list taken right before.
-        self.networks = self._nm.scan()
+        self._scan(now)
         if not self._nm.start_hotspot(self._ap_ssid, self._ap_password):
-            self._retry_ap_later(now)
-            return
-        try:
-            self._portal = self._open_portal(self)
-        except OSError as exc:
-            log.error("Could not open the portal: %s", exc)
-            self._nm.stop_hotspot()
             self._retry_ap_later(now)
             return
         self._ap_since = now
         self.mode = "ap"
         log.info("Access point %s is up with %d networks to offer", self._ap_ssid, len(self.networks))
 
-    def _stop_ap(self) -> None:
-        if self._portal is not None:
-            self._portal.close()
-            self._portal = None
-        self._nm.stop_hotspot()
-
     def _try_credentials(self, creds: Credentials) -> None:
-        log.info("Trying network %r from the portal", creds.ssid)
-        self._stop_ap()
-        self.mode = "monitor"
+        from_ap = self.mode == "ap"
+        log.info("Trying network %r from the setup page", creds.ssid)
+        if from_ap:
+            self._nm.stop_hotspot()
+            self.mode = "monitor"
+
         ok, error = self._nm.connect(creds.ssid, creds.password)
         now = self._clock()
         if ok:
             log.info("Connected to %r", creds.ssid)
             self.last_error = ""
             self._last_ok = now
+            # The firmware reboots after a save, which reopens its page for
+            # another 10 minutes; do the same.
+            self._lan_until = now + self._timing.lan_portal_s
             return
+
         log.warning("Could not connect to %r: %s", creds.ssid, error)
         self.last_error = f"Could not connect to {creds.ssid}: {error}"
-        self._start_ap(now)
+        if from_ap:
+            self._start_ap(now)
+        # From the regular network, NetworkManager falls back to the saved
+        # networks on its own; if none works, the grace period opens the AP.
+
+    def _sync_portal(self, now: float) -> None:
+        wanted = self.mode == "ap" or now < self._lan_until
+        if wanted and self._portal is None:
+            try:
+                self._portal = self._open_portal(self)
+            except OSError as exc:
+                log.error("Could not open the setup page: %s", exc)
+                if self.mode == "ap":
+                    self._nm.stop_hotspot()
+                    self._retry_ap_later(now)
+        elif not wanted and self._portal is not None:
+            self._close_portal()
+            log.info("Setup page closed")
+
+    def _close_portal(self) -> None:
+        if self._portal is not None:
+            self._portal.close()
+            self._portal = None

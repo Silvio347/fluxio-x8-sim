@@ -37,8 +37,10 @@ deploy/         — systemd unit, captive DNS config, install/uninstall scripts
 tests/          — unittest, standard library only
 ```
 
-The Wi-Fi fallback mirrors the firmware's `lib/webserver/` (AP mode and
-`pages.h`), except that its page only listens on the access point.
+The Wi-Fi fallback mirrors the firmware's `lib/webserver/`: AP mode,
+`pages.h`, and the web server that stays reachable on the regular network for
+10 minutes after start. Unlike the firmware, a failed network switch keeps
+the previously saved networks.
 
 ## Rules
 

@@ -9,10 +9,13 @@ import threading
 
 from .config import ConfigError, load_config
 from .controller import Controller
-from .nm import AP_ADDRESS, NetworkManager
+from .nm import NetworkManager
 from .portal import PortalServer
 
 log = logging.getLogger("fluxio_wifi")
+
+# Every interface: the access point and, like the firmware, the regular network.
+PORTAL_HOST = "0.0.0.0"
 
 
 def main() -> int:
@@ -26,7 +29,7 @@ def main() -> int:
     logging.basicConfig(level=config.log_level, format="%(levelname)-7s %(name)s: %(message)s")
 
     def open_portal(controller: Controller) -> PortalServer:
-        return PortalServer(controller, config.device_id, AP_ADDRESS, config.portal_port).start()
+        return PortalServer(controller, config.device_id, PORTAL_HOST, config.portal_port).start()
 
     controller = Controller(
         NetworkManager(config.iface),
@@ -40,8 +43,8 @@ def main() -> int:
     signal.signal(signal.SIGINT, lambda *_: stop.set())
 
     log.info(
-        "Watching %s; access point %s after %.0fs without Wi-Fi",
-        config.iface, config.ap_ssid, config.timing.grace_s,
+        "Watching %s; access point %s after %.0fs without Wi-Fi; setup page on the regular network for %.0fs",
+        config.iface, config.ap_ssid, config.timing.grace_s, config.timing.lan_portal_s,
     )
     controller.run(stop)
     log.info("Stopped")

@@ -100,9 +100,13 @@ can't join a Wi-Fi network, so it can be configured from a phone.
 | Wrong password | The access point comes back and the Wi-Fi page shows the error |
 | 2 minutes with nobody on the access point | It goes down for 30 s so the saved networks can be retried, then comes back if they still fail |
 
-Unlike the firmware, the setup page only exists while the access point is up
-and only listens on its address, so nobody on the regular network can change
-the board's Wi-Fi.
+Like the firmware's web server, the same page is also reachable on the
+regular network at the board's IP (`http://<board-ip>/`) for 10 minutes after
+the service starts, and for another 10 minutes after the board joins a
+network through it. There is no password, same as the firmware. Saving a
+network from there makes the board switch to it; if that fails, it goes back
+to a saved network. `FLUXIO_PORTAL_LAN_S` changes the window: `0` keeps the
+page on the access point only, `inf` keeps it open all the time.
 
 It runs on the host as a systemd service, not in Docker, because it is what
 keeps the board reachable when something else breaks. It only uses the

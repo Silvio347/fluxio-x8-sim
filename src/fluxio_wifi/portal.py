@@ -72,12 +72,20 @@ def render_wifi_form(networks: Sequence[Network], error: str = "") -> str:
     )
 
 
-def render_connecting(ssid: str) -> str:
+def render_connecting(ssid: str, via_access_point: bool) -> str:
+    if via_access_point:
+        detail = (
+            "This access point turns off now. If the connection fails, "
+            "it comes back in a minute and shows the error on the Wi-Fi page."
+        )
+    else:
+        detail = (
+            "The board is leaving this network now, so this page stops responding. "
+            "If the new network fails, it goes back to a saved one or opens its access point."
+        )
     return _page(
         "Connecting",
-        f"<h1>Connecting to {html.escape(ssid)}</h1>"
-        "<p class='muted'>This access point turns off now. If the connection fails, "
-        "it comes back in a minute and shows the error on the Wi-Fi page.</p>",
+        f"<h1>Connecting to {html.escape(ssid)}</h1><p class='muted'>{detail}</p>",
     )
 
 
@@ -115,7 +123,7 @@ class PortalServer:
                 self._server = ThreadingHTTPServer((self.host, self._port), handler)
                 break
             except OSError:
-                # The hotspot address can show up a moment after nmcli returns.
+                # The port can still be held for a moment by a previous run.
                 if attempt == bind_attempts - 1:
                     raise
                 time.sleep(retry_s)
@@ -152,9 +160,10 @@ def _make_handler(portal: PortalServer) -> type[BaseHTTPRequestHandler]:
             self.wfile.write(data)
 
         def _redirect_home(self) -> None:
-            # Phones probe a known URL to detect captive portals; with DNS
-            # pointing everything here, this redirect makes them open the page.
-            self._send(302, "", {"Location": f"http://{portal.host}/"})
+            # Phones probe a known URL to detect captive portals; with DNS on
+            # the access point pointing every name here, this redirect makes
+            # them open the page. Relative, so it also works from the LAN.
+            self._send(302, "", {"Location": "/"})
 
         def _form(self, error: str) -> None:
             self._send(200, render_wifi_form(portal.controller.networks, error))
@@ -187,6 +196,6 @@ def _make_handler(portal: PortalServer) -> type[BaseHTTPRequestHandler]:
             elif not portal.controller.submit(creds):
                 self._form("Already trying a network, wait a moment.")
             else:
-                self._send(200, render_connecting(creds.ssid))
+                self._send(200, render_connecting(creds.ssid, portal.controller.mode == "ap"))
 
     return Handler

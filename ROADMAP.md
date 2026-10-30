@@ -9,7 +9,8 @@
 - [x] RGB LED: connection state, plus DO0-DO3 mirrored as red, green, blue and
       white.
 - [x] Wi-Fi fallback access point with a captive setup page, as a host
-      systemd service.
+      systemd service. Like the firmware, the page is also open on the
+      regular network for 10 minutes after start.
 - [x] Unit tests (standard library only), also run on the board's Python 3.10
       and inside the container.
 
@@ -61,7 +62,6 @@ controlled by the M4 and supervised from Fluxio.
 
 ## Backlog
 
-- LAN access to the setup page (it only listens on the access point today).
 - White LED pattern while the fallback access point is up.
 - Start the simulator container at boot (`restart: unless-stopped`).
 - paho reports the same disconnect twice in the log.

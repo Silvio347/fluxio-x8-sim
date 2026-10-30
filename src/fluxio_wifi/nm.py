@@ -10,8 +10,6 @@ from typing import Callable, Sequence
 log = logging.getLogger(__name__)
 
 AP_CONNECTION = "fluxio-ap"
-# NetworkManager's address for the board in shared (hotspot) mode.
-AP_ADDRESS = "10.42.0.1"
 
 Runner = Callable[[Sequence[str], float], "subprocess.CompletedProcess[str]"]
 

@@ -13,6 +13,7 @@ class FakeController:
         self.last_error = ""
         self.submitted = []
         self.accept = True
+        self.mode = "ap"
 
     def submit(self, creds):
         if not self.accept:
@@ -92,15 +93,21 @@ class PortalServerTest(unittest.TestCase):
         self.assertIn("bad password", body)
 
     def test_unknown_paths_redirect_home(self):
-        resp, _ = self.request("GET", "/generate_204")
+        resp, _ = self.request("GET", "/generate_204", headers={"Host": "connectivitycheck.gstatic.com"})
         self.assertEqual(resp.status, 302)
-        self.assertEqual(resp.getheader("Location"), "http://127.0.0.1/")
+        self.assertEqual(resp.getheader("Location"), "/")
 
     def test_valid_post_submits(self):
         resp, body = self.post_wifi({"ssid": "Home", "password": "password1"})
         self.assertEqual(resp.status, 200)
         self.assertIn("Connecting to Home", body)
+        self.assertIn("access point turns off", body)
         self.assertEqual(self.controller.submitted, [Credentials("Home", "password1")])
+
+    def test_post_from_the_regular_network_explains_the_switch(self):
+        self.controller.mode = "monitor"
+        _, body = self.post_wifi({"ssid": "Lab", "password": "password2"})
+        self.assertIn("leaving this network", body)
 
     def test_invalid_post_shows_the_form_again(self):
         _, body = self.post_wifi({"ssid": "Home", "password": "short"})

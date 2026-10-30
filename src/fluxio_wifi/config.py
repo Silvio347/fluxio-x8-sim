@@ -44,6 +44,20 @@ def _seconds(env: Mapping[str, str], key: str, default: float) -> float:
     return value
 
 
+def _window(env: Mapping[str, str], key: str, default: float) -> float:
+    """Like _seconds, but 0 (never) and inf (always) are allowed."""
+    raw = _get(env, key)
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        raise ConfigError(f"{key} must be a number of seconds or 'inf', got {raw!r}") from None
+    if not value >= 0:  # also rejects nan
+        raise ConfigError(f"{key} can't be negative")
+    return value
+
+
 def load_config(env: Mapping[str, str] = os.environ) -> WifiConfig:
     device_id = _get(env, "FLUXIO_DEVICE_ID")
     if not device_id:
@@ -60,6 +74,7 @@ def load_config(env: Mapping[str, str] = os.environ) -> WifiConfig:
         grace_s=_seconds(env, "FLUXIO_WIFI_GRACE_S", defaults.grace_s),
         ap_window_s=_seconds(env, "FLUXIO_WIFI_AP_WINDOW_S", defaults.ap_window_s),
         client_retry_s=_seconds(env, "FLUXIO_WIFI_CLIENT_RETRY_S", defaults.client_retry_s),
+        lan_portal_s=_window(env, "FLUXIO_PORTAL_LAN_S", defaults.lan_portal_s),
     )
 
     port_raw = _get(env, "FLUXIO_PORTAL_PORT") or "80"
