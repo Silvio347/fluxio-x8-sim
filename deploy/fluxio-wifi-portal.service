@@ -1,0 +1,15 @@
+[Unit]
+Description=Fluxio Wi-Fi fallback access point and setup portal
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/fluxio/wifi-portal.env
+Environment=PYTHONPATH=/usr/local/lib/fluxio-wifi-portal
+ExecStart=/usr/bin/python3 -m fluxio_wifi
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

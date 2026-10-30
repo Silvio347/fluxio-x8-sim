@@ -5,6 +5,12 @@ Arduino Portenta X8. To the backend and the dashboard it looks like one more
 ESP32 running `fluxio_esp32`: same HTTP calls, same MQTT topics, payloads and
 timing. The hardware I/O is replaced by simulated signals.
 
+It has two parts:
+
+- `fluxio_sim`: the simulated device, in Docker.
+- `fluxio_wifi`: a Wi-Fi fallback access point with a setup page, as a
+  systemd service on the host.
+
 ## Roadmap
 
 | Phase | I/O comes from | Status |
@@ -80,6 +86,39 @@ When the simulator stops, the LED goes back to the board's default
 The container has no restart policy yet, so it does not come back after a
 reboot.
 
+## Wi-Fi fallback access point
+
+Like the firmware's AP mode, the board brings up its own access point when it
+can't join a Wi-Fi network, so it can be configured from a phone.
+
+| Step | What happens |
+|---|---|
+| No Wi-Fi client connection for 60 s | Scans the networks around, then starts the access point `Fluxio-<last 4 of the device ID>` (WPA2) |
+| Phone joins the access point | Every DNS name answers `10.42.0.1`, so the phone pops up the setup page |
+| Network chosen and saved on `/wifi` | The access point goes down and the board joins that network; NetworkManager keeps it for later boots |
+| Wrong password | The access point comes back and the Wi-Fi page shows the error |
+| 2 minutes with nobody on the access point | It goes down for 30 s so the saved networks can be retried, then comes back if they still fail |
+
+Unlike the firmware, the setup page only exists while the access point is up
+and only listens on its address, so nobody on the regular network can change
+the board's Wi-Fi.
+
+It runs on the host as a systemd service, not in Docker, because it is what
+keeps the board reachable when something else breaks. It only uses the
+board's own Python 3.10 standard library and `nmcli`.
+
+Install (as root on the board, from the repository root):
+
+```sh
+install -d -m 700 /etc/fluxio
+cp wifi-portal.example.env /etc/fluxio/wifi-portal.env   # then edit it
+sh deploy/install-wifi-portal.sh
+journalctl -u fluxio-wifi-portal -f
+```
+
+Remove with `sh deploy/uninstall-wifi-portal.sh`. ADB over USB keeps working
+whatever the Wi-Fi state is, so it is always a way back in.
+
 ## Tests
 
 The tests only need the standard library:
@@ -90,3 +129,5 @@ PYTHONPATH=src python -m unittest discover -s tests
 
 On Windows PowerShell: `$env:PYTHONPATH = "src"; python -m unittest discover -s tests`.
 Inside the container: `sudo docker compose run --rm fluxio-x8-sim python -m unittest discover -s tests`.
+The Wi-Fi fallback on the board's own Python:
+`PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_wifi*.py'`.
