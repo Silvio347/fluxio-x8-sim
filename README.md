@@ -15,12 +15,13 @@ It has two parts:
 
 | Phase | I/O comes from | Status |
 |---|---|---|
-| 0 | Random signals generated on Linux | **current** |
-| 1 | A sketch on the STM32H747 M4 core, read over RPC | planned |
+| 0 | Random signals generated on Linux | done |
+| 1 | A sketch on the STM32H747 M4 core, read over RPC | **next** |
 | 2 | Real ADC/GPIO on a carrier board (LM35 + SSR plant) | planned |
 
 The I/O sits behind the `IoSource` interface, so each phase only adds an
-implementation and flips `FLUXIO_IO_SOURCE`.
+implementation and flips `FLUXIO_IO_SOURCE`. Tasks per phase are in
+[ROADMAP.md](ROADMAP.md).
 
 ## What phase 0 does
 
